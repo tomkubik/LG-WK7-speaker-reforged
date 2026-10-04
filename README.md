@@ -1,7 +1,7 @@
 # WK7 Speaker REFORGED – New Custom Software for Some Models
 
 <p align="center">
-  <img src="web-assets/WK7-Reforged.jpeg" alt="WK7 Speaker Reforged" width="480" />
+  <img src="web-assets/WK7-Reforged-Powerup.jpg" alt="WK7 Speaker Reforged" width="480" />
 </p>
 
 A lightweight, non-destructive firmware and software stack that brings the **LG WK7 ThinQ** smart speaker back to life as a modern, local-first streaming audio endpoint.
@@ -22,7 +22,12 @@ Despite its exceptional acoustic engineering, tight coupling to proprietary clou
   <img src="web-assets/timeline.png" alt="Timeline of the LG WK7: From Launch to Bricked and Revived" width="100%" />
 </p>
 
-**WK7 Revived** completely bypasses the defunct Google and LG cloud servers, restoring local streaming via **AirPlay 2**, **Spotify Connect**, and **moOde audio** through a lightweight, local-first Alpine Linux stack on firmware slot B.
+**WK7 Reforged** completely bypasses the defunct Google and LG cloud servers, restoring local streaming via **AirPlay 2**, **Spotify Connect**, and **moOde audio** through a lightweight, local-first Alpine Linux stack on firmware slot B.
+
+<p>
+  <img src="web-assets/wk7.jpg" alt="Let's bring these speakers back to life!" width="260" />
+</p>
+
 
 ---
 
@@ -272,9 +277,10 @@ Practical options:
     └── wk7-probe/                              # Hardware probe documentation & MICOM serial protocol
 ```
 
-<p>
-  <img src="web-assets/wk7.jpg" alt="Let's bring these speakers back to life!" width="380" />
+<p align="center">
+  <img src="web-assets/WK7-Reforged.jpeg" alt="WK7 Speaker Reforged" width="480" />
 </p>
+
 ---
 
 ## License & Disclaimers
