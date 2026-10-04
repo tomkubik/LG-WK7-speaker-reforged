@@ -37,7 +37,7 @@ Despite its exceptional acoustic engineering, tight coupling to proprietary clou
 >
 > | | Unlocked | Locked |
 > |---|---|---|
-> | Folder | `WK7-software-for-unlocked-bootloader/` | `WK7-software-for-locked-bootloader/` |
+> | Folder | `WK7-software-for-unlocked-bootloader/` | `WK7-software-for-locked-bootloader-EXPERIMENTAL/` |
 > | Status | Tested on real hardware | **Experimental — never tested** |
 > | Auto-start at power-on | Yes | **No** (manual start required) |
 > | Slot B firmware work | Yes | No |
@@ -158,7 +158,7 @@ If your unit's bootloader is locked, you cannot use the main path: it needs slot
 firmware work, which a locked bootloader refuses. A separate experimental folder
 covers what *is* possible.
 
-**[WK7-software-for-locked-bootloader/](WK7-software-for-locked-bootloader/)**
+**[WK7-software-for-locked-bootloader-EXPERIMENTAL/](WK7-software-for-locked-bootloader-EXPERIMENTAL/)**
 
 > [!CAUTION]
 > **Experimental. No locked WK7 has ever been tested with these tools.**
@@ -188,7 +188,7 @@ adb -s <speaker-ip>:5555 shell '/data/wk7-enter.sh -c "wk7ctl start all"'
 ### Start here
 
 ```bash
-cd WK7-software-for-locked-bootloader
+cd WK7-software-for-locked-bootloader-EXPERIMENTAL
 ./install-locked.sh <speaker-ip> --probe
 ```
 
@@ -230,7 +230,7 @@ Practical options:
 │   ├── timeline.png                            # Historical timeline infographic
 │   ├── timeline.svg                            # Vector source for timeline
 │   └── wk7.jpg                                 # Speaker hardware photo
-├── WK7-software-for-locked-bootloader/          # ⚠ EXPERIMENTAL, never tested on a locked unit
+├── WK7-software-for-locked-bootloader-EXPERIMENTAL/   # ⚠ EXPERIMENTAL, never tested on a locked unit
 │   ├── README.md                                # What works / doesn't for locked units
 │   ├── AGENTS.md                                # Working rules for this folder
 │   ├── install-locked.sh                        # /data-only installer (no firmware writes)

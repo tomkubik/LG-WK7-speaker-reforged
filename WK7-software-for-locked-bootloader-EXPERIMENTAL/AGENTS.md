@@ -1,6 +1,6 @@
 # AGENTS.md — locked-bootloader toolkit
 
-Scope: this file applies to `WK7-software-for-locked-bootloader/` only. For the
+Scope: this file applies to `WK7-software-for-locked-bootloader-EXPERIMENTAL/` only. For the
 main (unlocked) project see `../WK7-software-for-unlocked-bootloader/wk7-build/AGENTS.md`.
 
 ## What this is

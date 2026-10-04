@@ -47,7 +47,7 @@ run. Destructive scripts require typing the literal word `YES`.
 ## Quick start
 
 ```bash
-cd WK7-software-for-locked-bootloader
+cd WK7-software-for-locked-bootloader-EXPERIMENTAL
 
 # Always start here. Read-only, works as a plain ADB shell, no root needed.
 ./install-locked.sh <speaker-ip> --probe

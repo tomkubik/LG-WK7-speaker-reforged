@@ -20,8 +20,8 @@ wifi.txt*
 
 # Locked-bootloader folder: backups hold verbatim LG firmware images
 # (abl, boot, system_b, vbmeta, ...) which must never be committed.
-/WK7-software-for-locked-bootloader/backups/
-/WK7-software-for-locked-bootloader/state/
+/WK7-software-for-locked-bootloader-EXPERIMENTAL/backups/
+/WK7-software-for-locked-bootloader-EXPERIMENTAL/state/
 
 # Probe logs: keep only markdown documentation
 /WK7-software-for-unlocked-bootloader/wk7-probe/*
