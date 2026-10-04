@@ -1,0 +1,22 @@
+#!/bin/sh
+# wk7-factory-reset: return the speaker to the newly installed state, then reboot into Wi-Fi setup mode.
+# Clears: saved Wi-Fi networks, speaker name and dashboard settings, moOde settings, volume levels and the
+# Spotify login. Never touches the firmware slots (the reboot keeps the active slot). Started by wk7-micomd
+# after play/pause is held until the ring turns red and pressed again (the confirm), or by hand: wk7-factory-reset --yes
+[ "$1" = "--yes" ] || { echo "usage: wk7-factory-reset --yes"; exit 2; }
+echo "$(date +%T) factory reset" >> /tmp/factory-reset.log
+wk7ctl stop spotify; wk7ctl stop airplay
+wk7-wifisetup forget                                          # also switches Android Wi-Fi off first
+rm -f /etc/wk7/settings.json                                  # name back to "WK7", default settings
+python3 - <<'PY'                                             # AirPlay name back to "WK7", no volume cap
+import re
+for p in ("/etc/shairport-sync.conf", "/etc/shairport-sync-ap2.conf"):
+    t = open(p).read()
+    t = re.sub(r'name = "[^"]*";', 'name = "WK7";', t, count=1)     # first name = the general section
+    t = re.sub(r"\n  volume_max_db = [-0-9.]+;", "", t)
+    open(p, "w").write(t)
+PY
+cp /usr/local/share/wk7/moode.json.default /etc/wk7/moode.json
+rm -rf /var/cache/spotifyd/* /run/wk7.volume /run/wk7.airplay-volume /run/wk7.spotify-volume
+sync
+env -u LD_PRELOAD chroot /proc/1/root /system/bin/reboot

@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""wk7-wifisetup: first-run Wi-Fi setup for the WK7 (runs inside the chroot, as root).
+
+  wk7-wifisetup has-network   exit 0 if a Wi-Fi network is saved, 1 if not
+  wk7-wifisetup forget        remove every saved Wi-Fi network (Android Wi-Fi is switched off first)
+  wk7-wifisetup run           setup mode: scan, open the "WK7-Setup" network with a setup page at
+                              http://192.168.4.1/ (phones show it as a sign-in page), save the chosen
+                              network, join it. Returns 0 once connected.
+
+Saved networks live where LG's Android keeps them (/data/misc/wifi/wpa_supplicant.conf), so Android's Wi-Fi
+service keeps joining the saved network at every boot. The access point uses LG's own hostapd and dnsmasq
+(the same tools LG's setup used) through Android's root at /proc/1/root.
+"""
+import hashlib
+import html
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
+
+ANDROID = "/proc/1/root"
+WPA_CONF = "/data/misc/wifi/wpa_supplicant.conf"           # Android path (seen from Android's root)
+NET_HISTORY = "/data/misc/wifi/networkHistory.txt"
+AP_SSID = "WK7-Setup"
+AP_IP = "192.168.4.1"
+WORK = "/data/local/tmp"                                   # Android-side scratch for hostapd/dnsmasq
+FLAG = "/run/wk7/setup-mode"                               # wk7-micomd shows a blue ring while it exists
+JOIN_WAIT = 60
+LOG = "/var/log/wk7-wifisetup.log"                         # persistent, so a failed setup can be read later
+
+
+def log(*a):
+    line = time.strftime("%H:%M:%S ") + " ".join(str(x) for x in a)
+    print(line, flush=True)
+    try:
+        os.makedirs(os.path.dirname(LOG), exist_ok=True)
+        with open(LOG, "a") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
+def android(cmd, timeout=30):
+    """Run a shell command in LG's Android (outside the chroot)."""
+    full = "export PATH=/system/bin:/system/xbin ANDROID_ROOT=/system ANDROID_DATA=/data; " + cmd
+    try:
+        # without LD_PRELOAD: wk7ctl preloads the chroot's getrandom shim, which Android's linker can't find
+        # ("CANNOT LINK EXECUTABLE"), so every Android command failed when setup ran from the boot sequence
+        env = {k: v for k, v in os.environ.items() if k != "LD_PRELOAD"}
+        r = subprocess.run(["chroot", ANDROID, "/system/bin/sh", "-c", full], capture_output=True,
+                           text=True, timeout=timeout, env=env)
+        if r.returncode != 0 or r.stderr.strip():
+            log("android command rc=%d: %s -> %s" % (r.returncode, cmd[:80], r.stderr.strip()[-300:]))
+        return r.stdout
+    except (OSError, subprocess.SubprocessError) as e:
+        log("android command failed:", cmd, e)
+        return ""
+
+
+def conf_path():
+    return ANDROID + WPA_CONF
+
+
+def read_conf():
+    try:
+        return open(conf_path()).read()
+    except OSError:
+        return ""
+
+
+def write_conf(text):
+    # rewrite in place: keeps Android's owner (wifi:wifi) and SELinux label on the file
+    with open(conf_path(), "r+") as f:
+        f.seek(0)
+        f.write(text)
+        f.truncate()
+
+
+def has_network():
+    return "network={" in read_conf()
+
+
+def strip_networks(text):
+    return re.sub(r"\n*network=\{.*?\n\}\n?", "\n", text, flags=re.S).rstrip("\n") + "\n"
+
+
+def wifi_off():
+    android("svc wifi disable")
+    for _ in range(15):                                    # wait for wpa_supplicant to exit (it saves on exit)
+        if "wpa_supplicant" not in android("ps"):
+            break
+        time.sleep(1)
+
+
+def forget():
+    wifi_off()
+    if os.path.exists(conf_path()):
+        write_conf(strip_networks(read_conf()))
+    try:
+        os.remove(ANDROID + NET_HISTORY)
+    except OSError:
+        pass
+    log("saved Wi-Fi networks removed")
+
+
+def network_block(ssid, password):
+    lines = ["network={", "\tssid=%s" % ssid.encode().hex()]      # hex: any characters in the name are safe
+    if not password:
+        lines.append("\tkey_mgmt=NONE")
+    else:
+        if len(password) == 64 and re.fullmatch(r"[0-9a-fA-F]+", password):
+            lines.append("\tpsk=%s" % password.lower())
+        else:                                                  # store the derived key, not the password itself
+            lines.append("\tpsk=%s" % hashlib.pbkdf2_hmac("sha1", password.encode(), ssid.encode(), 4096, 32).hex())
+        lines.append("\tkey_mgmt=WPA-PSK")
+    lines += ["\tpriority=1", "}"]
+    return "\n".join(lines) + "\n"
+
+
+def save_network(ssid, password):
+    text = strip_networks(read_conf()) + "\n" + network_block(ssid, password)
+    write_conf(text)
+    log("network saved:", repr(ssid))                         # never log the password
+
+
+def scan():
+    """Nearby networks as [(ssid, signal_dbm, secured)], strongest first. Needs wlan0 in station mode.
+    Retried: right after boot the driver may still be starting and return nothing."""
+    out = ""
+    for attempt in range(5):
+        out = android("ip link set wlan0 up; iw dev wlan0 scan 2>&1", timeout=40)
+        if "BSS " in out:
+            break
+        log("scan attempt %d: no results (%s)" % (attempt + 1, out.strip().splitlines()[-1:] or "empty"))
+        time.sleep(4)
+    nets, cur = {}, None
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("BSS "):
+            cur = {"ssid": "", "signal": -100.0, "secured": False}
+        elif cur is None:
+            continue
+        elif line.startswith("signal:"):
+            try:
+                cur["signal"] = float(line.split()[1])
+            except (IndexError, ValueError):
+                pass
+        elif line.startswith("SSID:"):
+            cur["ssid"] = line[5:].strip()
+            if cur["ssid"] and cur["signal"] > nets.get(cur["ssid"], cur)["signal"] - 0.1:
+                nets[cur["ssid"]] = cur
+        elif line.startswith(("RSN:", "WPA:")) or "Privacy" in line:
+            cur["secured"] = True
+    return sorted(((n["ssid"], n["signal"], n["secured"]) for n in nets.values()), key=lambda n: -n[1])
+
+
+def wait_wlan0(timeout=60):
+    """wlan0 present; if Android unloaded the driver (e.g. after a failed join), load it again in station
+    mode the way wk7-usbroute does (same mode, so no chip reload)."""
+    for i in range(timeout):
+        if os.path.exists("/sys/class/net/wlan0"):
+            return True
+        if i == 5:
+            try:
+                with open("/sys/module/wlan/parameters/fwpath", "w") as f:
+                    f.write("sta")
+                log("Wi-Fi driver load triggered")
+            except OSError as e:
+                log("Wi-Fi driver load failed:", e)
+        time.sleep(1)
+    return False
+
+
+def start_ap():
+    """WK7-Setup as a second interface (softap0) on the station-mode driver. LG's driver supports station +
+    access point at once; switching its firmware to AP mode (fwpath=ap) instead reloads the USB Wi-Fi chip and
+    failed on real boots ("HIF registration failed"), so the driver mode is never changed here."""
+    if not wait_wlan0():
+        log("no wlan0")
+        return None
+    iface = "softap0"
+    if not os.path.exists("/sys/class/net/" + iface):
+        android("iw dev wlan0 interface add %s type __ap" % iface)
+    if not os.path.exists("/sys/class/net/" + iface):
+        log("could not add %s; iw dev: %s" % (iface, android("iw dev").replace("\n", " | ")))
+        return None
+    os.makedirs(ANDROID + WORK, exist_ok=True)
+    with open(ANDROID + WORK + "/wk7-hostapd.conf", "w") as f:
+        f.write("interface=%s\ndriver=nl80211\nssid=%s\nchannel=6\nhw_mode=g\nieee80211n=1\n"
+                "ignore_broadcast_ssid=0\n" % (iface, AP_SSID))
+    android("ip addr flush dev {0}; ip addr add {1}/24 dev {0}; ip link set {0} up".format(iface, AP_IP))
+    android("hostapd -B %s/wk7-hostapd.conf </dev/null >/dev/null 2>&1" % WORK)
+    # DHCP for phones, and every DNS name answers with the speaker so phones open the setup page by themselves
+    # (output redirected: dnsmasq keeps inherited pipes open, which would block this call)
+    android("dnsmasq --interface={0} --bind-interfaces --except-interface=lo --dhcp-range=192.168.4.10,192.168.4.99,1h "
+            "--address=/#/{1} --no-resolv --no-hosts --dhcp-leasefile={2}/wk7-setup.leases "
+            "--pid-file={2}/wk7-dnsmasq.pid </dev/null >/dev/null 2>&1".format(iface, AP_IP, WORK))
+    time.sleep(3)
+    info = android("iw dev %s info" % iface)
+    if "type AP" not in info or AP_SSID not in info:
+        log("access point did not start:", info.replace("\n", " | "))
+        stop_ap(iface)
+        return None
+    log("access point %s up on %s (%s)" % (AP_SSID, iface, AP_IP))
+    return iface
+
+
+def stop_ap(iface):
+    android("kill $(cat %s/wk7-dnsmasq.pid) 2>/dev/null; killall hostapd 2>/dev/null" % WORK)
+    if os.path.exists("/sys/class/net/softap0"):
+        android("ip addr flush dev softap0; iw dev softap0 del 2>/dev/null")
+
+
+def join():
+    """Start Android Wi-Fi with the saved network (same restart as wk7-usbroute); True once wlan0 has an IPv4 address."""
+    android("svc wifi disable; sleep 3; svc wifi enable")
+    for _ in range(JOIN_WAIT):
+        out = subprocess.run(["ip", "-4", "addr", "show", "wlan0"], capture_output=True, text=True).stdout
+        if "inet " in out:
+            log("joined:", re.search(r"inet ([0-9.]+)", out).group(1))
+            android("stop mdnsd")                               # clashes with avahi
+            return True
+        time.sleep(1)
+    return False
+
+
+PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>WK7 Setup</title>
+<style>
+:root{--bg:#f4f4f2;--card:#fff;--fg:#1b1b1d;--mut:#6c6c70;--line:#e2e2df;--acc:#0b6bdc;--err:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#121213;--card:#1d1d1f;--fg:#f1f1f2;--mut:#9d9da3;--line:#2d2d30;--acc:#4b9bff;--err:#ff8a80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,system-ui,sans-serif}
+main{max-width:480px;margin:0 auto;padding:16px}h1{font-size:22px;margin:4px 0 12px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+label{display:block;font-weight:600;margin:12px 0 4px}select,input{width:100%;padding:10px;border:1px solid var(--line);
+border-radius:8px;background:var(--bg);color:var(--fg);font-size:16px}
+button{margin-top:16px;width:100%;padding:12px;border:0;border-radius:8px;background:var(--acc);color:#fff;font-size:16px}
+.note{color:var(--mut);font-size:14px;margin-top:8px}.err{color:var(--err);font-weight:600}a{color:var(--acc)}
+</style></head><body><main><h1>WK7 Speaker setup</h1>{msg}
+<section><form method="post" action="/save">
+<label for="net">Wi-Fi network</label>
+<select id="net" name="net">{options}<option value="">Other (type the name below)</option></select>
+<label for="other">Network name <small>(only for "Other")</small></label><input id="other" name="other" maxlength="32">
+<label for="pw">Password <small>(leave empty for an open network)</small></label>
+<input id="pw" name="pw" type="password" maxlength="64" autocomplete="off">
+<button type="submit">Join this network</button></form>
+<div class="note">The speaker leaves the WK7-Setup network to join yours. If it can't connect, WK7-Setup comes back
+within about a minute and a half and you can try again. <a href="/rescan">Scan again</a></div></section></main></body></html>"""
+
+DONE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WK7 Setup</title><style>body{font:16px/1.45 -apple-system,system-ui,sans-serif;max-width:480px;margin:0 auto;padding:16px}</style>
+</head><body><h1>Joining %s…</h1><p>The speaker is leaving WK7-Setup now. Reconnect your phone to your own Wi-Fi.
+In about a minute the speaker's page is at <b>http://wk7.local/</b>. If WK7-Setup reappears instead, the password
+was probably wrong: join WK7-Setup again and retry.</p></body></html>"""
+
+
+class Setup:
+    def __init__(self):
+        self.networks, self.error, self.choice = [], "", None
+        self.done = threading.Event()
+
+
+def make_handler(state):
+    class Handler(BaseHTTPRequestHandler):
+        def send(self, code, body):
+            data = body.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def page(self):
+            opts = "".join('<option value="%s">%s%s</option>' % (html.escape(s, True), html.escape(s),
+                           "" if sec else " (open)") for s, _, sec in state.networks)
+            msg = '<p class="err">%s</p>' % html.escape(state.error) if state.error else ""
+            self.send(200, PAGE.replace("{options}", opts).replace("{msg}", msg))
+
+        def do_GET(self):
+            if self.path.startswith("/rescan"):
+                state.choice = ("__rescan__", "")
+                state.done.set()
+                return self.send(200, "<meta http-equiv=refresh content='20;url=/'>Scanning… this page reloads in 20 s.")
+            self.page()                                    # every URL gets the setup page (captive portal)
+
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length") or 0)
+            form = parse_qs(self.rfile.read(n).decode(errors="replace"))
+            ssid = (form.get("other", [""])[0].strip() or form.get("net", [""])[0]).strip()
+            pw = form.get("pw", [""])[0]
+            if not ssid or len(ssid.encode()) > 32:
+                state.error = "Pick a network or type its name."
+                return self.page()
+            if pw and not (8 <= len(pw) <= 63 or re.fullmatch(r"[0-9a-fA-F]{64}", pw)):
+                state.error = "Wi-Fi passwords are 8 to 63 characters."
+                return self.page()
+            self.send(200, DONE % html.escape(ssid))
+            state.choice = (ssid, pw)
+            state.done.set()
+
+        def log_message(self, *a):
+            pass
+    return Handler
+
+
+def run():
+    os.makedirs(os.path.dirname(FLAG), exist_ok=True)
+    open(FLAG, "w").close()
+    state = Setup()
+    log("setup mode start")
+    subprocess.run(["wk7ctl", "stop", "dashboard"], capture_output=True)   # the setup page needs port 80
+    for attempt in range(30):
+        try:
+            srv = ThreadingHTTPServer(("", 80), make_handler(state))
+            break
+        except OSError as e:
+            if attempt == 29:
+                log("port 80 busy, giving up:", e)
+                raise
+            time.sleep(1)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    failures = 0
+    try:
+        # Android's Wi-Fi stays off during setup (it gave up at boot, and wk7-usbroute did not restart it);
+        # "svc wifi disable" here would unload the driver and take wlan0 away
+        while True:
+            wait_wlan0()
+            state.networks = scan()
+            log("networks found:", len(state.networks))
+            iface = start_ap()
+            if not iface:
+                failures += 1
+                if failures >= 6:
+                    log("access point failed %d times, giving up" % failures)
+                    return 1
+                time.sleep(10)
+                continue
+            failures = 0
+            state.done.clear()
+            state.done.wait()
+            time.sleep(2)                                  # let the phone receive the reply page
+            stop_ap(iface)
+            ssid, pw = state.choice
+            if ssid == "__rescan__":
+                continue
+            save_network(ssid, pw)
+            if join():
+                return 0
+            log("could not join", repr(ssid), "-> back to setup")
+            state.error = 'Could not join "%s". Check the password and try again.' % ssid
+            forget()
+    finally:
+        srv.shutdown()
+        try:
+            os.remove(FLAG)
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "has-network":
+        sys.exit(0 if has_network() else 1)
+    if cmd == "forget":
+        forget()
+        sys.exit(0)
+    if cmd == "run":
+        sys.exit(run())
+    print(__doc__)
+    sys.exit(2)

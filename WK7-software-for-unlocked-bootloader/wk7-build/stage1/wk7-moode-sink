@@ -1,0 +1,10 @@
+#!/bin/sh
+# wk7-moode-sink: moOde audio (S16LE 48 kHz stereo on stdin) -> LG DSP's second input (MultiMedia2),
+# which the DSP mixes with AirPlay's input (MultiMedia1) in hardware, so the two never fight over a device.
+# Playback buffer comes from /etc/wk7/moode.json ("playback_buffer_ms", set on the dashboard's Advanced
+# moOde section); playback starts once 40% of it is queued.
+amixer -c0 cset name='PRI_MI2S_RX Audio Mixer MultiMedia2' on >/dev/null 2>&1
+BUF=$(python3 -c "import json; print(int(json.load(open('/etc/wk7/moode.json')).get('playback_buffer_ms', 150)))" 2>/dev/null || echo 150)
+# The WK7's volume is independent of moOde (both modes): apply the speaker's own volume (dashboard / buttons)
+[ -f /run/wk7.volume ] || echo 40 > /run/wk7.volume
+/usr/local/bin/wk7gain | aplay -q -D plughw:0,1 -f S16_LE -r 48000 -c 2 -t raw --buffer-time=$((BUF * 1000)) --start-delay=$((BUF * 400))

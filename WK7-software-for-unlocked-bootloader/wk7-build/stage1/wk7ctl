@@ -1,0 +1,112 @@
+#!/bin/sh
+# wk7ctl: start/stop/restart the WK7 Linux services inside the chroot.
+# Usage: wk7ctl {start|stop|restart} {airplay|spotify|buttons|dashboard|all}   |   wk7ctl status
+SETTINGS=/etc/wk7/settings.json
+AP2_BIN=/usr/local/bin/shairport-sync-ap2
+# LG's 3.10 kernel has no getrandom(); serve getentropy()/getrandom() from /dev/urandom for everything we start.
+# Calls into Android (chroot /proc/1/root) must drop it: Android's linker can't load it ("env -u LD_PRELOAD").
+export LD_PRELOAD=/usr/local/lib/libgetrandom-shim.so
+
+setting() { python3 -c "import json,sys; print(json.load(open('$SETTINGS')).get('$1','$2'))" 2>/dev/null || echo "$2"; }
+pid_of() { [ -f /run/$1.pid ] && kill -0 "$(cat /run/$1.pid)" 2>/dev/null && cat /run/$1.pid; }
+
+start_base() {
+    mkdir -p /run/dbus /var/run/avahi-daemon
+    pidof dbus-daemon >/dev/null || { rm -f /run/dbus/dbus.pid; dbus-daemon --system --fork; }
+    # avahi renames its process to "avahi-daemon: running [...]"; its pid file can be stale, so check the process itself
+    wk7-hostname --apply >/dev/null 2>&1                # .local name follows the speaker name
+    ps | grep -v grep | grep -q "avahi-daemon: " || { rm -f /var/run/avahi-daemon/pid; avahi-daemon -D --no-chroot --no-drop-root; }
+    amixer -c0 cset name='PRI_MI2S_RX Audio Mixer MultiMedia1' on >/dev/null
+}
+
+start_airplay() {
+    start_base
+    [ -f /run/wk7.volume ] || setting speaker_volume 40 > /run/wk7.volume    # remembered speaker volume
+    F=/tmp/shairport-sync-audio; [ -p $F ] || { rm -f $F; mkfifo $F; }
+    BIN=shairport-sync; CONF=/etc/shairport-sync.conf; echo 44100 > /run/player.rate
+    if [ "$(setting airplay_mode 1)" = "2" ] && [ -x $AP2_BIN ]; then
+        BIN=$AP2_BIN; CONF=/etc/shairport-sync-ap2.conf; echo 48000 > /run/player.rate
+        pid_of nqptp >/dev/null || { setsid nohup /usr/local/bin/nqptp >/tmp/nqptp.log 2>&1 </dev/null & echo $! > /run/nqptp.pid; }
+    fi
+    pid_of player >/dev/null || { setsid nohup /root/player.sh >/tmp/player.log 2>&1 </dev/null & echo $! > /run/player.pid; }
+    pid_of shairport >/dev/null || { setsid nohup $BIN -c $CONF -vv >/tmp/shairport.log 2>&1 </dev/null & echo $! > /run/shairport.pid; }
+}
+
+# Spotify Connect: spotifyd -> pipe -> wk7-spotify-player -> DSP input MultiMedia5 (see asound.conf).
+# VOLUME POLICY: the Spotify app's volume is the control (soft-volume); speaker buttons nudge a trim.
+start_spotify() {
+    [ "$(setting spotify True)" = "True" ] || return 0
+    start_base
+    F=/tmp/spotifyd-audio; [ -p $F ] || { rm -f $F; mkfifo $F; }
+    amixer -c0 cset name='PRI_MI2S_RX Audio Mixer MultiMedia5' on >/dev/null
+    mkdir -p /var/cache/spotifyd
+    pid_of spplayer >/dev/null || { setsid nohup /usr/local/bin/wk7-spotify-player >/tmp/spplayer.log 2>&1 </dev/null & echo $! > /run/spplayer.pid; }
+    pid_of spotify >/dev/null || { setsid nohup spotifyd --no-daemon --config-path /etc/wk7/spotifyd.conf \
+        --device-name "$(setting name WK7)" --device-type speaker --backend pipe --device $F --audio-format s16 \
+        --bitrate 320 --volume-controller soft-volume --initial-volume 50 --volume-normalisation=false \
+        --cache-path /var/cache/spotifyd --no-audio-cache --use-mpris=false --autoplay=false \
+        --onevent /usr/local/bin/wk7-spotify-hook >/tmp/spotifyd.log 2>&1 </dev/null & echo $! > /run/spotify.pid; }
+}
+stop_spotify() {
+    stop_one spotify; killall spotifyd 2>/dev/null
+    p=$(pid_of spplayer) && kill -- -$p 2>/dev/null; rm -f /run/spplayer.pid; pkill -f wk7-spotify-player 2>/dev/null
+    rm -f /run/wk7/spotify-active; wk7-source-flag; true
+}
+
+# Boot sequence: decide USB routing (cable present -> stay on USB, else Wi-Fi; no saved Wi-Fi -> setup mode),
+# wait for an address, then start services.
+boot_all() {
+    stop_one micomd                                     # wk7-usbroute needs the MICOM UART
+    wk7-usbroute auto
+    rc=$?                                               # keep the last two boots' routing logs
+    mv -f /var/log/wk7-usbroute.log /var/log/wk7-usbroute.prev.log 2>/dev/null; cp /tmp/usbroute.log /var/log/wk7-usbroute.log 2>/dev/null
+    if [ $rc -eq 3 ]; then                               # no saved Wi-Fi: first-run setup network "WK7-Setup"
+        start_buttons                                   # buttons + LEDs (blue ring) during setup; factory reset works
+        if [ -f /etc/wk7/setup-test ]; then             # diagnostics boot: 4 minutes of setup, then back to the cable
+            rm -f /etc/wk7/setup-test
+            timeout 240 wk7-wifisetup run >/dev/null 2>>/var/log/wk7-wifisetup.log
+            echo "$(date +%T) setup test over, back to the cable" >>/var/log/wk7-wifisetup.log
+            env -u LD_PRELOAD chroot /proc/1/root /system/bin/sh -c 'killall hostapd dnsmasq' 2>/dev/null; rm -f /run/wk7/setup-mode
+            wk7-usbroute socket >/dev/null
+        else
+            wk7-wifisetup run >/dev/null 2>>/var/log/wk7-wifisetup.log || echo "$(date +%T) wk7-wifisetup exit $?" >>/var/log/wk7-wifisetup.log
+        fi
+    fi
+    for i in $(seq 1 60); do ip -4 addr show wlan0 2>/dev/null | grep -q inet && break; [ -e /sys/class/net/wlan0 ] || break; sleep 1; done
+    start_airplay; start_spotify; start_buttons; start_dashboard; start_igmp
+}
+
+stop_one() { p=$(pid_of $1) && kill $p 2>/dev/null; rm -f /run/$1.pid; }
+# player.sh's pipeline subshells survive a plain kill of the loop and stay blocked opening the AirPlay FIFO;
+# the next session then has several readers and the audio comes out garbled. Kill its whole process group
+# (setsid made it the leader) and any stray copies.
+stop_player() { p=$(pid_of player) && kill -- -$p 2>/dev/null; rm -f /run/player.pid; pkill -f /root/player.sh 2>/dev/null; true; }
+stop_airplay() { avahi-daemon -k 2>/dev/null; rm -f /var/run/avahi-daemon/pid; stop_one shairport; stop_one nqptp; stop_player; killall aplay 2>/dev/null; killall shairport-sync shairport-sync-ap2 2>/dev/null; true; }
+
+start_buttons() { pid_of micomd >/dev/null || { setsid nohup python3 /usr/local/bin/wk7-micomd >/tmp/micomd.log 2>&1 </dev/null & echo $! > /run/micomd.pid; }; }
+start_dashboard() { pid_of dashboard >/dev/null || { setsid nohup python3 /usr/local/bin/wk7-dashboard >/tmp/dashboard.log 2>&1 </dev/null & echo $! > /run/dashboard.pid; }; }
+start_lgstop() {      # runs in Android's own root (/proc/1/root), keeps LG's defunct app stopped on slot B
+    pid_of lgstop >/dev/null || { setsid nohup env -u LD_PRELOAD chroot /proc/1/root /system/bin/sh /data/wk7linux/usr/local/bin/wk7-lgstop >/dev/null 2>&1 </dev/null & echo $! > /run/lgstop.pid; }
+}
+start_igmp() { pid_of igmp >/dev/null || { setsid nohup python3 /usr/local/bin/wk7-igmp >/tmp/igmp.log 2>&1 </dev/null & echo $! > /run/igmp.pid; }; }
+restart_dashboard() { stop_one dashboard; sleep 1; start_dashboard; }
+
+case "$1 $2" in
+    "start airplay") start_airplay ;;
+    "stop airplay") stop_airplay ;;
+    "restart airplay") stop_airplay; sleep 1; start_airplay ;;
+    "start spotify") start_spotify ;;
+    "stop spotify") stop_spotify ;;
+    "restart spotify") stop_spotify; sleep 1; start_spotify ;;
+    "start buttons") start_buttons ;;
+    "stop buttons") stop_one micomd ;;
+    "restart buttons") stop_one micomd; sleep 1; start_buttons ;;
+    "start dashboard") start_dashboard ;;
+    "stop dashboard") stop_one dashboard ;;
+    "restart dashboard") restart_dashboard ;;
+    "start all") boot_all ;;
+    "stop all") stop_airplay; stop_spotify; stop_one micomd ;;
+    "restart all") stop_airplay; stop_spotify; stop_one micomd; sleep 1; start_airplay; start_spotify; start_buttons ;;
+    "status "*) for s in shairport nqptp player spotify spplayer micomd dashboard igmp lgstop; do echo "$s=$(pid_of $s || echo stopped)"; done ;;
+    *) echo "usage: wk7ctl {start|stop|restart} {airplay|spotify|buttons|dashboard|all} | wk7ctl status"; exit 1 ;;
+esac

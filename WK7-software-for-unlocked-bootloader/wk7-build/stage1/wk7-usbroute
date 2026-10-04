@@ -1,0 +1,108 @@
+#!/bin/sh
+# wk7-usbroute: decide where the speaker's single USB port goes (MICOM command C2 00 <state>).
+#   0x00 = mini-USB socket (cable / adb / fastboot)   0x01 = internal Wi-Fi/BT hub
+# The MICOM remembers the last state across power loss, so this is decided fresh at every boot:
+#   auto:     route to the socket, wait until the SoC has left USB host mode (can take ~40 s), then wait for a
+#             computer: android_usb state CONNECTED/CONFIGURED -> stay on the cable. A USB bus reset in the kernel
+#             log extends the wait by HANDSHAKE_WAIT for slow hosts, but is not proof of a computer by itself.
+#             (power_supply/usb/present is not usable: it still reads 1 right after leaving host mode, without a cable.)
+#             Otherwise route to Wi-Fi and restart Android's Wi-Fi; if Wi-Fi doesn't come up -> back to the cable.
+#             No saved Wi-Fi network (new install or factory reset) -> exit 3; wk7ctl then runs wk7-wifisetup.
+#   socket / internal: force a route (internal also falls back to the cable if Wi-Fi fails).
+# Must run inside the chroot while wk7-micomd is stopped (it owns /dev/ttyHSL1).
+MODE=${1:-auto}
+TTY=/dev/ttyHSL1
+USB_STATE=/sys/class/android_usb/android0/state
+HOST_BUS=/sys/bus/usb/devices/usb1
+HOST_LEAVE_WAIT=60
+CABLE_WAIT=25
+HANDSHAKE_WAIT=60
+WIFI_WAIT=60
+LOG=/tmp/usbroute.log
+
+log() { echo "$(date +%T) usbroute: $*" | tee -a $LOG; }
+
+micom_switch() {
+    tid=$(( ($(date +%s) % 120) + 1 ))
+    cs=$(( (0xE5 + tid + 0xC2 + 0x00 + 1 + $1) & 0xFF ))
+    stty -F $TTY 115200 raw -echo -ixon -ixoff cs8 -cstopb -parenb
+    (timeout 1 cat $TTY > /tmp/usbroute.reply) & sleep 0.1
+    printf "$(printf '\\x%02X\\x%02X\\x%02X\\x%02X\\x%02X\\x%02X\\x%02X' 0xE5 $tid 0xC2 0x00 $cs 1 $1)" > $TTY
+    wait
+    log "switch 0x0$1 -> reply $(od -An -tx1 /tmp/usbroute.reply | tr -s ' ')"
+}
+
+# Kernel uptime (s) of the last USB bus reset event on our device port, 0 if none.
+last_host_reset() {
+    dmesg 2>/dev/null | sed -n 's/^\[ *\([0-9]*\)\..*CI13XXX_CONTROLLER_RESET_EVENT.*/\1/p' | tail -n 1 | grep . || echo 0
+}
+
+# A computer is present once android_usb reaches CONNECTED/CONFIGURED. A USB bus reset alone is not treated as
+# proof: when it was (2026-10-04), the speaker stopped coming back on Wi-Fi after a test, and the reset may come
+# from the controller's own switch out of host mode (it showed up 1-2 s after it in every logged boot). A reset
+# only buys time: the wait is extended by HANDSHAKE_WAIT for a slow host (seen with a Linux PC) to finish.
+cable_present() {
+    i=0
+    while [ -e $HOST_BUS ] && [ $i -lt $HOST_LEAVE_WAIT ]; do sleep 1; i=$((i + 1)); done
+    log "USB host mode left after ${i}s"
+    since=$(cut -d. -f1 /proc/uptime)
+    wait=$CABLE_WAIT; extended=
+    i=0
+    while [ $i -lt $wait ]; do
+        case "$(cat $USB_STATE 2>/dev/null)" in CONNECTED|CONFIGURED) log "computer finished the USB handshake after ${i}s"; return 0 ;; esac
+        if [ -z "$extended" ] && [ "$(last_host_reset)" -ge $((since - 2)) ]; then
+            extended=1; wait=$((wait + HANDSHAKE_WAIT))
+            log "USB reset seen; waiting up to $wait s for the handshake"
+        fi
+        sleep 1; i=$((i + 1))
+    done
+    log "android_usb state: $(cat $USB_STATE 2>/dev/null); usb events: $(dmesg | grep -c CI13XXX_CONTROLLER)"
+    return 1
+}
+
+to_wifi() {
+    micom_switch 1
+    # wait for the internal hub + Wi-Fi chip to enumerate
+    for i in $(seq 1 20); do [ -e /sys/bus/usb/devices/1-1.1 ] && break; sleep 1; done
+    log "internal hub: $([ -e /sys/bus/usb/devices/1-1.1 ] && echo present || echo missing)"
+    if [ ! -e /sys/class/net/wlan0 ]; then
+        # Android gives up loading the Wi-Fi driver after failing at boot (chip routed away); kick it directly
+        echo sta > /sys/module/wlan/parameters/fwpath && log "Wi-Fi driver load triggered"
+        for i in $(seq 1 30); do [ -e /sys/class/net/wlan0 ] && break; sleep 1; done
+    fi
+    if [ ! -e /sys/class/net/wlan0 ]; then
+        log "Wi-Fi driver did not load -> back to the cable"
+        micom_switch 0
+        return 1
+    fi
+    if ! wk7-wifisetup has-network; then
+        log "no saved Wi-Fi network -> setup mode"
+        return 3
+    fi
+    log "wlan0 present; restarting Android Wi-Fi so it reconnects"
+    env -u LD_PRELOAD chroot /proc/1/root /system/bin/sh -c 'export PATH=/system/bin:/system/xbin ANDROID_ROOT=/system ANDROID_DATA=/data; svc wifi disable; sleep 3; svc wifi enable'
+    for i in $(seq 1 $WIFI_WAIT); do
+        if ip -4 addr show wlan0 2>/dev/null | grep -q inet; then
+            log "Wi-Fi connected: $(ip -4 addr show wlan0 | grep -o 'inet [0-9.]*')"
+            env -u LD_PRELOAD chroot /proc/1/root /system/bin/stop mdnsd    # the Wi-Fi restart brings Android's mDNS back; it clashes with avahi
+            return 0
+        fi
+        sleep 1
+    done
+    log "Wi-Fi did not connect -> back to the cable"
+    micom_switch 0
+    return 1
+}
+
+case "$MODE" in
+    socket)   micom_switch 0 ;;
+    internal) to_wifi; exit $? ;;
+    auto)
+        micom_switch 0
+        if cable_present; then
+            # diagnostics: /etc/wk7/setup-test makes one boot go to Wi-Fi despite the cable (wk7ctl returns to it)
+            [ -f /etc/wk7/setup-test ] && { log "setup test: computer on the cable, going to Wi-Fi anyway"; to_wifi; exit $?; }
+            log "computer on the cable -> staying on USB"
+        else log "no computer on the cable -> Wi-Fi"; to_wifi; exit $?; fi ;;
+    *) echo "usage: wk7-usbroute [auto|socket|internal]"; exit 2 ;;
+esac

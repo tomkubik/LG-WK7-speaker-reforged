@@ -1,0 +1,13 @@
+{
+  "mode": "off",
+  "hostname": "WK7",
+  "multicast": "239.0.0.1",
+  "rtp_port": 1350,
+  "jitter_ms": 80,
+  "http_url": "http://moode.local:8000",
+  "sink": ["/usr/local/bin/wk7-player-input", "--format", "s16le", "--rate", "48000"],
+  "volume_hook": "",
+  "airplay_flag": "/run/wk7/airplay-active",
+  "http_port": 80,
+  "mpd_port": 6600
+}

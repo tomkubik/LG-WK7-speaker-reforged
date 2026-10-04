@@ -1,0 +1,10 @@
+#!/system/bin/sh
+# wk7-lgstop (runs in LG's Android, slot B only): keep LG's speaker app (Cast/Assistant, defunct) stopped.
+# It relaunches itself after a force-stop; this checks every 30 s. Runtime only - nothing persistent, so
+# LG's original firmware on slot A is unaffected.
+export PATH=/system/bin:/system/xbin ANDROID_ROOT=/system ANDROID_DATA=/data
+[ "$(getprop ro.boot.slot_suffix)" = "_b" ] || exit 0
+while true; do
+    pidof com.lge.smartspeaker >/dev/null && am force-stop com.lge.smartspeaker
+    sleep 30
+done

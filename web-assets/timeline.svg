@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" width="1200" height="480">
+  <defs>
+    <style>
+      .title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 24px; font-weight: 700; fill: #f0f6fc; }
+      .subtitle { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 13px; fill: #8b949e; }
+      .date-badge { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+      .step-title { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 600; fill: #f0f6fc; }
+      .step-desc { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 11.5px; fill: #8b949e; line-height: 1.45; }
+      .card { rx: 10px; ry: 10px; stroke-width: 1px; }
+    </style>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1117" />
+      <stop offset="100%" stop-color="#161b22" />
+    </linearGradient>
+    <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2ea043" />
+      <stop offset="35%" stop-color="#d29922" />
+      <stop offset="70%" stop-color="#f85149" />
+      <stop offset="100%" stop-color="#58a6ff" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="480" rx="14" fill="url(#bg)" stroke="#30363d" stroke-width="1.5"/>
+
+  <!-- Header -->
+  <text x="40" y="48" class="title">The Rise, Fall &amp; Revival of the LG WK7</text>
+  <text x="40" y="74" class="subtitle">How cloud obsolescence turned premium Meridian audio hardware into bricked e-waste — and how custom software brings it back.</text>
+
+  <!-- Central connecting timeline bar -->
+  <rect x="60" y="112" width="1080" height="4" rx="2" fill="url(#lineGrad)"/>
+
+  <!-- STEP 1: 2018 Launch -->
+  <circle cx="100" cy="114" r="14" fill="#238636" stroke="#0d1117" stroke-width="3"/>
+  <text x="100" y="119" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">1</text>
+  <rect x="25" y="142" width="180" height="305" rx="8" fill="#161b22" stroke="#238636" stroke-width="1.2" class="card"/>
+  <rect x="37" y="156" width="60" height="20" rx="10" fill="#238636" fill-opacity="0.2"/>
+  <text x="67" y="170" text-anchor="middle" fill="#3fb950" class="date-badge">2018</text>
+  <text x="37" y="200" class="step-title">Flagship Debut</text>
+  <text x="37" y="224" class="step-desc">
+    <tspan x="37" dy="0">• LG &amp; Meridian launch</tspan>
+    <tspan x="37" dy="16">  WK7 smart speaker.</tspan>
+    <tspan x="37" dy="18">• Hi-Res 24-bit/96kHz</tspan>
+    <tspan x="37" dy="16">  audio hardware.</tspan>
+    <tspan x="37" dy="18">• Powered by Google</tspan>
+    <tspan x="37" dy="16">  Android Things + Cast.</tspan>
+    <tspan x="37" dy="22" fill="#3fb950" font-weight="600">✓ Fully Functional</tspan>
+  </text>
+
+  <!-- STEP 2: 2020 Neglect -->
+  <circle cx="295" cy="114" r="14" fill="#bb8009" stroke="#0d1117" stroke-width="3"/>
+  <text x="295" y="119" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">2</text>
+  <rect x="220" y="142" width="180" height="305" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.2" class="card"/>
+  <rect x="232" y="156" width="80" height="20" rx="10" fill="#bb8009" fill-opacity="0.2"/>
+  <text x="272" y="170" text-anchor="middle" fill="#e3b341" class="date-badge">2019–2020</text>
+  <text x="232" y="200" class="step-title">IoT Neglect</text>
+  <text x="232" y="224" class="step-desc">
+    <tspan x="232" dy="0">• Google refocuses</tspan>
+    <tspan x="232" dy="16">  away from smart</tspan>
+    <tspan x="232" dy="16">  speaker IoT.</tspan>
+    <tspan x="232" dy="18">• OS updates freeze</tspan>
+    <tspan x="232" dy="16">  at Android 7.0 /</tspan>
+    <tspan x="232" dy="16">  Linux 3.10.</tspan>
+    <tspan x="232" dy="22" fill="#d29922" font-weight="600">⚠ Support Stagnant</tspan>
+  </text>
+
+  <!-- STEP 3: 2022 Google Shutdown -->
+  <circle cx="490" cy="114" r="14" fill="#da3633" stroke="#0d1117" stroke-width="3"/>
+  <text x="490" y="119" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">3</text>
+  <rect x="415" y="142" width="180" height="305" rx="8" fill="#161b22" stroke="#da3633" stroke-width="1.2" class="card"/>
+  <rect x="427" y="156" width="75" height="20" rx="10" fill="#da3633" fill-opacity="0.2"/>
+  <text x="464.5" y="170" text-anchor="middle" fill="#f85149" class="date-badge">JAN 2022</text>
+  <text x="427" y="200" class="step-title">Platform Killed</text>
+  <text x="427" y="224" class="step-desc">
+    <tspan x="427" dy="0">• Google terminates</tspan>
+    <tspan x="427" dy="16">  Android Things</tspan>
+    <tspan x="427" dy="16">  console &amp; backend.</tspan>
+    <tspan x="427" dy="18">• OEM developer</tspan>
+    <tspan x="427" dy="16">  access severed.</tspan>
+    <tspan x="427" dy="22" fill="#f85149" font-weight="600">✕ Official End of Life</tspan>
+  </text>
+
+  <!-- STEP 4: 2023-2024 Cloud Broken -->
+  <circle cx="685" cy="114" r="14" fill="#b62324" stroke="#0d1117" stroke-width="3"/>
+  <text x="685" y="119" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">4</text>
+  <rect x="610" y="142" width="180" height="305" rx="8" fill="#161b22" stroke="#f85149" stroke-width="1.2" class="card"/>
+  <rect x="622" y="156" width="85" height="20" rx="10" fill="#da3633" fill-opacity="0.2"/>
+  <text x="664.5" y="170" text-anchor="middle" fill="#f85149" class="date-badge">2023–2024</text>
+  <text x="622" y="200" class="step-title">Cloud Deprecated</text>
+  <text x="622" y="224" class="step-desc">
+    <tspan x="622" dy="0">• LG setup app &amp; cloud</tspan>
+    <tspan x="622" dy="16">  servers pulled.</tspan>
+    <tspan x="622" dy="18">• Google Cast / OAuth</tspan>
+    <tspan x="622" dy="16">  tokens expire.</tspan>
+    <tspan x="622" dy="18">• Speaker cannot</tspan>
+    <tspan x="622" dy="16">  authenticate to cloud.</tspan>
+    <tspan x="622" dy="22" fill="#f85149" font-weight="600">✕ Cloud Inoperable</tspan>
+  </text>
+
+  <!-- STEP 5: Bricked Outcome -->
+  <circle cx="880" cy="114" r="14" fill="#6e7681" stroke="#0d1117" stroke-width="3"/>
+  <text x="880" y="119" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">5</text>
+  <rect x="805" y="142" width="180" height="305" rx="8" fill="#21262d" stroke="#8b949e" stroke-width="1.2" class="card"/>
+  <rect x="817" y="156" width="95" height="20" rx="10" fill="#6e7681" fill-opacity="0.2"/>
+  <text x="864.5" y="170" text-anchor="middle" fill="#8b949e" class="date-badge">THE OUTCOME</text>
+  <text x="817" y="200" class="step-title">Bricked E-Waste</text>
+  <text x="817" y="224" class="step-desc">
+    <tspan x="817" dy="0">• Wi-Fi change or</tspan>
+    <tspan x="817" dy="16">  factory reset traps</tspan>
+    <tspan x="817" dy="16">  device in boot loop.</tspan>
+    <tspan x="817" dy="18">• Zero audio playback.</tspan>
+    <tspan x="817" dy="18">• Premium hardware</tspan>
+    <tspan x="817" dy="16">  rendered silent junk.</tspan>
+    <tspan x="817" dy="22" fill="#f85149" font-weight="700">🚫 Bricked Paperweight</tspan>
+  </text>
+
+  <!-- STEP 6: 2026 Revived -->
+  <circle cx="1075" cy="114" r="14" fill="#1f6feb" stroke="#0d1117" stroke-width="3"/>
+  <text x="1075" y="119" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-size="12" font-weight="bold">★</text>
+  <rect x="1000" y="142" width="175" height="305" rx="8" fill="#0c2d6b" fill-opacity="0.3" stroke="#58a6ff" stroke-width="1.5" class="card"/>
+  <rect x="1012" y="156" width="70" height="20" rx="10" fill="#388bfd" fill-opacity="0.2"/>
+  <text x="1047" y="170" text-anchor="middle" fill="#58a6ff" class="date-badge">TODAY</text>
+  <text x="1012" y="200" class="step-title" fill="#58a6ff">WK7 Revived</text>
+  <text x="1012" y="224" class="step-desc">
+    <tspan x="1012" dy="0" fill="#c9d1d9">• Local-only firmware.</tspan>
+    <tspan x="1012" dy="18" fill="#c9d1d9">• AirPlay 2 &amp; 1.</tspan>
+    <tspan x="1012" dy="18" fill="#c9d1d9">• Spotify Connect.</tspan>
+    <tspan x="1012" dy="18" fill="#c9d1d9">• moOde audio.</tspan>
+    <tspan x="1012" dy="18" fill="#c9d1d9">• Web dashboard.</tspan>
+    <tspan x="1012" dy="18" fill="#c9d1d9">• Captive Wi-Fi setup.</tspan>
+    <tspan x="1012" dy="22" fill="#388bfd" font-weight="700">⚡ 100% Usable</tspan>
+  </text>
+</svg>

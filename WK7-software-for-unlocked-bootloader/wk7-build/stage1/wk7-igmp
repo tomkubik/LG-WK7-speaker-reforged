@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""wk7-igmp: send IGMPv2 membership reports for moOde's multicast group from user space.
+
+LG's 3.10 kernel is built without IPv4 multicast management (no /proc/net/igmp), so it never tells the
+network it wants 239.0.0.1. Routers/APs with IGMP snooping then don't forward moOde's Multiroom stream
+to the speaker. This sends the report itself every 30 s while moOde Multiroom mode is on.
+Usage: wk7-igmp [--once] [config]   (config default /etc/wk7/moode.json)
+"""
+import json
+import socket
+import struct
+import sys
+import time
+
+CONF = next((a for a in sys.argv[1:] if not a.startswith("--")), "/etc/wk7/moode.json")
+INTERVAL = 30
+
+
+def checksum(data):
+    s = sum(struct.unpack("!%dH" % (len(data) // 2), data))
+    s = (s >> 16) + (s & 0xFFFF)
+    return ~(s + (s >> 16)) & 0xFFFF
+
+
+def report(sock, group):
+    pkt = struct.pack("!BBH4s", 0x16, 0, 0, socket.inet_aton(group))     # IGMPv2 membership report
+    pkt = pkt[:2] + struct.pack("!H", checksum(pkt)) + pkt[4:]
+    sock.sendto(pkt, (group, 0))
+
+
+def main():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_IGMP)
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
+    while True:
+        try:
+            cfg = json.load(open(CONF))
+        except (OSError, ValueError):
+            cfg = {}
+        if cfg.get("mode") == "multiroom":
+            try:
+                report(sock, cfg.get("multicast", "239.0.0.1"))
+            except OSError as e:
+                print(time.strftime("%H:%M:%S"), "wk7-igmp: send failed:", e, flush=True)
+        if "--once" in sys.argv:
+            return
+        time.sleep(INTERVAL)
+
+
+if __name__ == "__main__":
+    main()

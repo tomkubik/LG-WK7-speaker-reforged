@@ -1,0 +1,13 @@
+# WK7 Linux firmware hook (slot B only): starts our AirPlay/buttons stack from /data/wk7linux after boot.
+# init may not transition into the su domain on this build, so SELinux is set permissive first (slot B only).
+service wk7 /system/bin/sh /system/bin/wk7-boot.sh
+    class late_start
+    user root
+    group root
+    seclabel u:r:su:s0
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    write /sys/fs/selinux/enforce 0
+    start wk7

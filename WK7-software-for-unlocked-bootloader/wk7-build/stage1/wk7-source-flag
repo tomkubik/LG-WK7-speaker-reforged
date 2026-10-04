@@ -1,0 +1,8 @@
+#!/bin/sh
+# /run/wk7/source-active exists while AirPlay or Spotify plays; wk7-moode's sink steps aside while it exists
+# (moode.json "airplay_flag").
+if [ -e /run/wk7/airplay-active ] || [ -e /run/wk7/spotify-active ]; then
+    : > /run/wk7/source-active
+else
+    rm -f /run/wk7/source-active
+fi

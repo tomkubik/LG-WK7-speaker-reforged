@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WK7 Speaker</title>
+<style>
+:root{--chip:#eaf3ff;--chipline:#b9d5ff;--chipfg:#16324f;--chipon:#cfe3ff;--bg:#f4f4f2;--card:#fff;--fg:#1b1b1d;--mut:#6c6c70;--line:#e2e2df;--acc:#0b6bdc;--ok:#1f8a3d;--warn:#b25b00}
+@media (prefers-color-scheme:dark){:root{--chip:#1b2a3f;--chipline:#36557f;--chipfg:#dce9ff;--chipon:#26406a;--bg:#121213;--card:#1d1d1f;--fg:#f1f1f2;--mut:#9d9da3;--line:#2d2d30;--acc:#4b9bff;--ok:#43c46a;--warn:#ffa24a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,system-ui,"Segoe UI",sans-serif}
+main{max-width:560px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 14px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 10px}
+.kv{display:grid;grid-template-columns:42% 58%;gap:4px 0}
+.kv div:nth-child(odd){color:var(--mut)}
+label{display:block;font-weight:600;margin:12px 0 4px}
+small{font-weight:400;color:var(--mut)}
+input[type=text],select{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-size:16px}
+input[type=range]{width:100%}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+button{margin-top:14px;padding:10px 18px;border:0;border-radius:8px;background:var(--acc);color:#fff;font-size:16px;cursor:pointer}
+.note{font-size:14px;color:var(--mut);margin-top:6px}
+.note.strong{font-weight:700}
+#msg{color:var(--ok);font-weight:600;min-height:1.4em}
+.radio{display:flex;gap:8px;align-items:center;font-weight:400;margin:6px 0}
+details{margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
+summary{cursor:pointer;color:var(--acc);font-size:15px;font-weight:600}
+input[type=number]{width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-size:16px}
+button.danger{background:var(--warn)}
+.presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-top:12px}
+.presets button{margin-top:0;background:var(--chip);color:var(--chipfg);border:1px solid var(--chipline);border-radius:10px;
+  font-size:15px;font-weight:600;padding:10px 12px;box-shadow:0 1px 2px rgba(0,0,0,.08);line-height:1.25;text-align:center}
+.presets button small{display:block;font-weight:400;font-size:12px;color:var(--chipfg);opacity:.75;margin-top:2px}
+.presets button:hover{filter:brightness(.97)}
+.presets button.on{background:var(--chipon);border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+</style></head>
+<body><main>
+<h1>WK7 Speaker</h1>
+<div id="msg"></div>
+
+<section><h2>Status</h2><div class="kv" id="status"><div>Loading…</div><div></div></div>
+<div class="row"><button type="button" id="rap">Restart AirPlay</button><button type="button" id="rsp">Restart Spotify</button><button type="button" id="rbt">Reboot speaker</button></div>
+<div class="note">Restart AirPlay or Spotify takes a few seconds. Reboot takes about 2 minutes; the speaker comes back on slot B in HTTP-stream mode.</div></section>
+
+<section><h2>Speaker</h2>
+<form id="sf">
+<label for="name">Name <small>shown in AirPlay and Spotify; also sets the address &lt;name&gt;.local</small></label>
+<input type="text" id="name" maxlength="40">
+<label>Speaker volume for moOde <small id="svv"></small></label>
+<input type="range" id="sv" min="0" max="100" step="1">
+<div class="note strong">This slider sets the WK7's level for moOde (HTTP stream and Multiroom), default 40. It is independent of moOde's own volume knob. It never affects AirPlay or Spotify: while one of them plays, the phone's, Mac's or Spotify app's volume controls the speaker and the speaker's buttons nudge it. When it stops or pauses, moOde comes back at this level.</div>
+<label for="ap">AirPlay version</label>
+<select id="ap">
+<option value="2">AirPlay 2: Home app, multiroom (buttons act on the speaker)</option>
+<option value="1">AirPlay 1: speaker buttons control the phone/Mac</option>
+</select>
+<label>Maximum volume <small id="mvv"></small></label>
+<input type="range" id="mv" min="-30" max="0" step="1">
+<label>LED ring brightness <small id="lbv"></small></label>
+<input type="range" id="lb" min="0" max="100" step="5">
+<label class="radio"><input type="checkbox" id="bt"> Speaker buttons enabled</label>
+<label class="radio"><input type="checkbox" id="spc"> Spotify Connect enabled <small>(pick the speaker in the Spotify app; the newest source, AirPlay or Spotify, takes over)</small></label>
+<button type="submit">Save</button>
+<div class="note">Changing name, AirPlay version or maximum volume restarts AirPlay (a few seconds); changing name or Spotify Connect restarts Spotify.</div>
+</form></section>
+
+<section><h2>moOde</h2>
+<form id="mf">
+<label class="radio"><input type="radio" name="mode" value="off"> AirPlay only</label>
+<label class="radio"><input type="radio" name="mode" value="multiroom"> moOde Multiroom receiver <small>(moOde: Multiroom → Discover)</small></label>
+<label class="radio"><input type="radio" name="mode" value="http"> moOde HTTP stream <small>(default after every restart)</small></label>
+<div id="urlrow"><label for="url">moOde stream address</label><input type="text" id="url"></div>
+<label for="host">Name in moOde</label><input type="text" id="host" maxlength="40">
+<button type="submit">Save moOde</button>
+<div class="note" id="mstatus"></div>
+</form>
+<details id="adv"><summary>Advanced: moOde buffering (tap to show)</summary>
+<form id="bf">
+<div class="note">Smaller buffers make moOde's pause/skip react faster on the WK7, but may cause dropouts on busy Wi-Fi.
+In HTTP-stream mode, most of the delay comes from moOde's stream itself; only the playback buffer applies here.
+Total delay added by the WK7 is roughly network + playback buffer.</div>
+<div class="presets">
+<button type="button" data-j="40" data-p="100">Low latency<small>40 / 100 ms</small></button>
+<button type="button" data-j="80" data-p="150">Default<small>80 / 150 ms</small></button>
+<button type="button" data-j="150" data-p="300">Stable<small>150 / 300 ms</small></button>
+<button type="button" data-j="300" data-p="500">Very stable<small>300 / 500 ms</small></button>
+</div>
+<label for="jit">Network buffer <small>Multiroom mode only · ms collected before playback starts (20–1000)</small></label>
+<input type="number" id="jit" min="20" max="1000" step="10">
+<label for="pbuf">Playback buffer <small>both modes (Multiroom and HTTP stream) · ms in the speaker's audio buffer (60–1000)</small></label>
+<input type="number" id="pbuf" min="60" max="1000" step="10">
+<button type="submit">Apply buffering</button>
+<div class="note">Applying restarts the moOde receiver; playback resumes within a second or two.</div>
+</form></details>
+</section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const flash = t => { $('msg').textContent = t; setTimeout(() => $('msg').textContent = '', 3000); };
+const getJSON = async (u, body) => (await fetch(u, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {})).json();
+
+function showRanges(){ $('svv').textContent = $('sv').value + '%'; $('mvv').textContent = $('mv').value + ' dB'; $('lbv').textContent = $('lb').value + '%'; }
+$('mv').oninput = $('lb').oninput = showRanges;
+$('sv').oninput = showRanges;
+$('sv').onchange = async () => { await getJSON('/api/settings', {speaker_volume:+$('sv').value}); flash('Volume ' + $('sv').value + '%'); };
+
+async function loadSettings(){
+  const s = await getJSON('/api/settings');
+  $('name').value = s.name; $('ap').value = s.airplay_mode; $('sv').value = s.speaker_volume;
+  $('mv').value = s.max_volume_db; $('lb').value = s.led_brightness; $('bt').checked = s.buttons; $('spc').checked = s.spotify;
+  showRanges();
+}
+$('sf').onsubmit = async e => {
+  e.preventDefault();
+  await getJSON('/api/settings', {name:$('name').value, airplay_mode:$('ap').value,
+    max_volume_db:+$('mv').value, led_brightness:+$('lb').value, buttons:$('bt').checked, spotify:$('spc').checked});
+  flash('Saved'); loadSettings();
+};
+
+const labels = {firmware:'Firmware', uptime:'Uptime', wifi:'Wi-Fi address', address:'Dashboard address', usb_route:'USB routing', airplay:'AirPlay',
+                airplay_version:'AirPlay version', spotify:'Spotify Connect', playing:'Playing now', buttons:'Buttons/LEDs'};
+async function loadStatus(){
+  try {
+    const s = await getJSON('/api/status');
+    $('status').innerHTML = '';
+    for (const [k, lbl] of Object.entries(labels)) {
+      const a = document.createElement('div'), b = document.createElement('div');
+      a.textContent = lbl; b.textContent = typeof s[k] === 'boolean' ? (s[k] ? 'yes' : 'no') : s[k];
+      $('status').append(a, b);
+    }
+    const m = await getJSON('/api/moode');
+    let t = 'State: ' + m.state;
+    if (m.mode === 'multiroom') t += ' · moOde switch: ' + (m.receiver_on ? 'On' : 'Off') + ' · volume ' + m.volume + (m.mute ? ' (muted)' : '');
+    if (m.error) t += ' · problem: ' + m.error;
+    $('mstatus').textContent = t;
+  } catch (e) {}
+}
+
+async function loadMoode(){
+  const m = await getJSON('/api/moode');
+  for (const r of document.getElementsByName('mode')) r.checked = r.value === m.mode;
+  $('url').value = m.http_url; $('host').value = m.hostname; syncUrl();
+}
+function syncUrl(){ $('urlrow').style.display = $('mf').mode.value === 'http' ? '' : 'none'; }
+$('mf').onchange = syncUrl;
+$('mf').onsubmit = async e => {
+  e.preventDefault();
+  await getJSON('/api/moode', {mode:$('mf').mode.value, http_url:$('url').value.trim(), hostname:$('host').value.trim()});
+  flash('moOde settings saved'); loadMoode();
+};
+
+async function loadBuffer(){
+  const b = await getJSON('/api/moode-buffer');
+  $('jit').value = b.jitter_ms; $('pbuf').value = b.playback_buffer_ms; markPreset();
+}
+function markPreset(){
+  for (const b of document.querySelectorAll('.presets button'))
+    b.classList.toggle('on', b.dataset.j == $('jit').value && b.dataset.p == $('pbuf').value);
+}
+for (const btn of document.querySelectorAll('.presets button'))
+  btn.onclick = () => { $('jit').value = btn.dataset.j; $('pbuf').value = btn.dataset.p; markPreset(); };
+$('jit').oninput = $('pbuf').oninput = markPreset;
+$('bf').onsubmit = async e => {
+  e.preventDefault();
+  await getJSON('/api/moode-buffer', {jitter_ms:+$('jit').value, playback_buffer_ms:+$('pbuf').value});
+  flash('Buffering applied'); loadBuffer();
+};
+
+$('rap').onclick = async () => { await getJSON('/api/action', {action:'restart_airplay'}); flash('Restarting AirPlay…'); };
+$('rsp').onclick = async () => { await getJSON('/api/action', {action:'restart_spotify'}); flash('Restarting Spotify…'); };
+$('rbt').onclick = async () => {
+  if (!confirm('Reboot the speaker? It is back in about 2 minutes.')) return;
+  await getJSON('/api/action', {action:'reboot'}); flash('Rebooting — back in about 2 minutes');
+};
+
+loadSettings(); loadMoode(); loadBuffer(); loadStatus(); setInterval(loadStatus, 3000);
+</script>
+</body></html>

@@ -1,0 +1,18 @@
+#!/bin/sh
+# spotifyd event hook (PLAYER_EVENT). The newest source wins:
+#  - Spotify starts playing -> drop any AirPlay session, moOde steps aside (source flag), trim reset to 100.
+#  - Spotify pauses/stops/disconnects -> flag removed, moOde comes back at its own level.
+# AirPlay taking over from Spotify is handled in wk7-airplay-hook (restarts spotifyd).
+FLAG=/run/wk7/spotify-active
+mkdir -p /run/wk7
+case "$PLAYER_EVENT" in
+  start)
+    if [ ! -e "$FLAG" ]; then
+        echo 100 > /run/wk7.spotify-volume.tmp && mv /run/wk7.spotify-volume.tmp /run/wk7.spotify-volume
+        [ -e /run/wk7/airplay-active ] && dbus-send --system --dest=org.gnome.ShairportSync /org/gnome/ShairportSync \
+            org.gnome.ShairportSync.DropSession >/dev/null 2>&1
+        : > "$FLAG"
+    fi ;;
+  pause|stop|sessiondisconnected) rm -f "$FLAG" ;;
+esac
+/usr/local/bin/wk7-source-flag

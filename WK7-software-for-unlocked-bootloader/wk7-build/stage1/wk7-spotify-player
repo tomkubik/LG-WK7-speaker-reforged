@@ -1,0 +1,8 @@
+#!/bin/sh
+# wk7 Spotify player: spotifyd pipe audio (44.1 kHz S16 stereo) -> wk7gain (Spotify trim, see VOLUME POLICY in
+# wk7gain.c) -> ALSA wk7spotify (48 kHz, DSP input MultiMedia5). Reopens after each session.
+[ -f /run/wk7.spotify-volume ] || echo 100 > /run/wk7.spotify-volume
+while true; do
+    /usr/local/bin/wk7gain /run/wk7.spotify-volume 100 < /tmp/spotifyd-audio | aplay -q -D wk7spotify -f S16_LE -r 44100 -c 2 -t raw
+    sleep 0.2
+done

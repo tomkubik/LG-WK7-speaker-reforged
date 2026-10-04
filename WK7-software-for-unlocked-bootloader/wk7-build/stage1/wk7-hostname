@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""wk7-hostname: print the .local hostname derived from the speaker name in /etc/wk7/settings.json
+("WK7" -> "wk7", "Living Room" -> "living-room"). With --apply, also set it in avahi
+(config for future starts + live via avahi-set-host-name)."""
+import json
+import re
+import subprocess
+import sys
+
+try:
+    name = json.load(open("/etc/wk7/settings.json")).get("name", "")
+except (OSError, ValueError):
+    name = ""
+slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:63] or "wk7"
+if "--apply" in sys.argv:
+    conf = "/etc/avahi/avahi-daemon.conf"
+    text = open(conf).read()
+    text = re.sub(r"(?m)^#?host-name=.*$", "host-name=%s" % slug, text)
+    open(conf, "w").write(text)
+    subprocess.run(["avahi-set-host-name", slug], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print(slug)
