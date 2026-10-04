@@ -1,7 +1,7 @@
 # WK7 Speaker REFORGED – New Custom Software for Some Models
 
 <p align="center">
-  <img src="web-assets/wk7.jpg" alt="WK7 Speaker Reforged" width="380" />
+  <img src="web-assets/WK7-reforged.jpeg" alt="WK7 Speaker Reforged" width="380" />
 </p>
 
 A lightweight, non-destructive firmware and software stack that brings the **LG WK7 ThinQ** smart speaker back to life as a modern, local-first streaming audio endpoint.
@@ -272,6 +272,9 @@ Practical options:
     └── wk7-probe/                              # Hardware probe documentation & MICOM serial protocol
 ```
 
+<p>
+  <img src="web-assets/wk7.jpg" alt="Let's bring these speakers back to life!" width="380" />
+</p>
 ---
 
 ## License & Disclaimers
