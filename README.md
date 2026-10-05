@@ -32,24 +32,116 @@ Despite its exceptional acoustic engineering, tight coupling to proprietary clou
 ---
 
 > [!IMPORTANT]
-> **Check your bootloader state first.** Which folder you need depends on it.
->
-> ```bash
-> adb shell getprop ro.boot.vbmeta.device_state
-> # unlocked  -> use WK7-software-for-unlocked-bootloader/  (full feature set)
-> # anything else -> see "Locked-bootloader units" below
-> ```
->
-> | | Unlocked | Locked |
-> |---|---|---|
-> | Folder | `WK7-software-for-unlocked-bootloader/` | `WK7-software-for-locked-bootloader-EXPERIMENTAL/` |
-> | Status | Tested on real hardware | **Experimental — never tested** |
-> | Auto-start at power-on | Yes | **No** (manual start required) |
-> | Slot B firmware work | Yes | No |
-> | AirPlay 2 / Spotify / moOde / dashboard | Yes | Expected to work, unverified |
->
-> The unlocked path is the supported one. The locked path is a separate,
-> experimental folder — see [Locked-bootloader units](#locked-bootloader-units).
+> **Check your bootloader state first.** Before loading software, you need to establish a wired ADB connection to probe your unit. Which folder you need depends on your bootloader's lock status.
+
+### Hardware Connection & Required Cables
+
+To communicate with the device or recover it, you need a wired data connection to a PC/Mac:
+
+| Physical Unit Variant | Connection Location | Required Cable | Instructions |
+|---|---|---|---|
+| **Exposed Port** (Developer / Service Units) | Port on the bottom recess / base of the speaker housing | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Plug directly into the base. Ensure it is a 4-wire data cable, not a charge-only cable. |
+| **Enclosed Housing** (Standard Retail Units) | Internal PCB service socket (under bottom rubber foot) | **Standard Micro-USB data cable** (Micro-B to USB-A or USB-C) | Peel back the bottom rubber ring and remove the 4 Phillips screws. The physical Micro-USB service receptacle is soldered directly on the lower interface board. |
+| **Unpopulated Header** *(Rare manufacturing variants)* | 4-pin USB test pads / header on the PCB (`VBUS`, `D-`, `D+`, `GND`) | **USB-A to 4-pin DuPont jumper cable** (or spliced USB 2.0 cable) | Connect `VBUS` (5V Red), `D-` (White), `D+` (Green), and `GND` (Black) directly to a standard USB port. |
+
+> [!TIP]
+> **Use a rear motherboard USB port**: When connecting to your PC/Mac, always use a port directly on the motherboard (rear of desktop) rather than an unpowered front-panel port, monitor hub, or USB dock. Front-panel hubs frequently fail the low-level Qualcomm USB handshake.
+
+---
+
+### Verifying Bootloader Lock Status
+
+With the speaker connected and powered on, run:
+
+```bash
+adb shell getprop ro.boot.vbmeta.device_state
+# unlocked  -> use WK7-software-for-unlocked-bootloader/  (full feature set)
+# anything else -> see "Locked-bootloader units" below
+
+adb shell getprop ro.boot.verifiedbootstate
+# orange    -> unlocked prototype / dev unit
+# green     -> locked retail unit
+```
+
+| | Unlocked (`orange`) | Locked (`green`) |
+|---|---|---|
+| Folder | [`WK7-software-for-unlocked-bootloader/`](WK7-software-for-unlocked-bootloader/) | [`WK7-software-for-locked-bootloader-EXPERIMENTAL/`](WK7-software-for-locked-bootloader-EXPERIMENTAL/) |
+| Status | Tested on real hardware | **Experimental — never tested** |
+| Auto-start at power-on | Yes | **No** (manual start required) |
+| Slot B firmware work | Yes | No |
+| AirPlay 2 / Spotify / moOde / dashboard | Yes | Expected to work, unverified |
+
+The unlocked path is the supported one. The locked path is a separate,
+experimental folder — see [Locked-bootloader units](#locked-bootloader-units).
+
+---
+
+## Unlocked Bootloader: How to Load the Software (The Supported Path)
+
+If your speaker confirms `ro.boot.vbmeta.device_state = unlocked` and `verifiedbootstate = orange`, you have an unlocked unit capable of running the autonomous dual-boot system. 
+
+The installation is **non-destructive**: LG's original stock firmware remains completely untouched in **Slot A** as a permanent recovery fallback. The revived stack runs in **Slot B** using an Alpine Linux chroot installed in `/data/wk7linux`.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        3-STEP DEPLOYMENT FLOW                          │
+│                                                                        │
+│  [Step 1: Backup]      Dump partitions for safety (wk7-backup)         │
+│          │                                                             │
+│          ▼                                                             │
+│  [Step 2: Userspace]   Install Alpine & services into /data/wk7linux    │
+│          │             via ./install.sh (Zero firmware flashing)       │
+│          ▼                                                             │
+│  [Step 3: Auto-Boot]   Patch Slot B init hook (system_b + vbmeta_b)     │
+│                        and switch active slot (Slot A preserved)       │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### High-Level Installation Steps
+
+#### 1. Back Up Factory Partitions (Safety Net)
+Before modifying anything, take verified raw dumps of your eMMC partitions over Wi-Fi ADB. If anything ever goes wrong, you can restore bit-for-bit back to stock.
+* Backup guide & partition verification: [`wk7-backup/README.md`](WK7-software-for-unlocked-bootloader/wk7-backup/README.md)
+
+#### 2. Deploy Userspace Audio Stack to `/data` (Zero Risk)
+The entire application stack (AirPlay 2, Spotify Connect, moOde, dashboard, button daemon) lives in `/data/wk7linux`. Run the automated installer from your computer:
+```bash
+cd WK7-software-for-unlocked-bootloader/wk7-build
+./install.sh <speaker-ip>
+```
+* **What this does**:
+  1. Bootstraps the Alpine Linux ARMv7 rootfs into `/data/wk7linux`.
+  2. Installs required audio packages (`python3`, `avahi`, `dbus`, `ffmpeg`, `opus`, `spotifyd`).
+  3. Compiles the low-level shims (`libgetrandom-shim.so` to bypass kernel 3.10 limitations, `wk7gain` volume scaler).
+  4. Natively builds AirPlay 2 (`nqptp` + `shairport-sync` 5.5.1) directly on the device.
+  5. Installs the web dashboard, hardware MICOM daemon, captive portal, and IGMP services.
+* **Fast Incremental Updates**: Whenever you tweak code or configs later, simply run `./install.sh --files <speaker-ip>` to update without rebooting.
+* Implementation details: [`install.sh`](WK7-software-for-unlocked-bootloader/wk7-build/install.sh) and [`stage1/README.md`](WK7-software-for-unlocked-bootloader/wk7-build/stage1/README.md)
+
+#### 3. Test Live in Memory Before Flashing
+Before making any firmware slot changes, you can start the full stack live while still running on LG's stock Slot A:
+```bash
+adb -s <speaker-ip>:5555 root
+adb -s <speaker-ip>:5555 shell '/data/wk7-enter.sh -c "wk7ctl start all"'
+```
+Stop conflicting LG processes (`stop peripheralman`, `stop mdnsd`), open `http://wk7.local/` on your network, and play music. If anything fails, simply rebooting the speaker instantly reverts 100% back to stock LG state.
+
+#### 4. Configure Slot B for Autonomous Cold-Boot
+To make the speaker boot automatically into WK7 Reforged without needing a computer attached:
+1. **Disable dm-verity on Slot B**: Flash [`vbmeta_b_hashtree_disabled.img`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/vbmeta_b_hashtree_disabled.img) to `vbmeta_b` (or run [`patch-slotb-images.py`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/patch-slotb-images.py)).
+2. **Set SELinux Permissive**: Patch the `boot_b` kernel cmdline header to permissive mode.
+3. **Install the Boot Hook**: Mount `system_b` and copy [`wk7.rc`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/wk7.rc) into `/system/etc/init/` and [`wk7-boot.sh`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/wk7-boot.sh) into `/system/bin/`.
+4. **Switch Active Slot to B**: Run `fastboot --set-active=b`.
+* Complete step-by-step firmware switching walkthrough: [`SLOT_B_PLAN.md`](WK7-software-for-unlocked-bootloader/wk7-build/SLOT_B_PLAN.md)
+
+---
+
+### Essential Technical References for Unlocked Units
+
+* **[wk7-build/AGENTS.md](WK7-software-for-unlocked-bootloader/wk7-build/AGENTS.md)**: **Read this first.** Contains the definitive architecture overview, volume policies, USB routing rules, hardware safety constraints, and boot behaviors.
+* **[stage1/README.md](WK7-software-for-unlocked-bootloader/wk7-build/stage1/README.md)**: Deep dive into the audio signal chain (Qualcomm Hexagon ADSP, 48 kHz S16 resampling, ALSA configurations), update procedures, and MICOM UART protocols.
+* **[SLOT_B_PLAN.md](WK7-software-for-unlocked-bootloader/wk7-build/SLOT_B_PLAN.md)**: Architectural plan for Slot B configuration, AVB verification handling, and fallback safety nets.
+* **[wk7-moode/INSTALL.md](WK7-software-for-unlocked-bootloader/wk7-moode/INSTALL.md)**: Configuration guide for connecting the speaker as a moOde audio HTTP stream or multi-room receiver.
 
 ---
 
