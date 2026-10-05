@@ -249,72 +249,131 @@ The LG WK7 utilizes an internal MICOM microcontroller to switch its single physi
 
 ---
 
-## Locked-bootloader units
+## Locked-Bootloader Units (Experimental)
 
-If your unit's bootloader is locked, you cannot use the main path: it needs slot B
-firmware work, which a locked bootloader refuses. A separate experimental folder
-covers what *is* possible.
+If your unit returns `verifiedbootstate = green` or `ro.boot.vbmeta.device_state = locked`, you cannot use the main Slot B firmware installation: Android Verified Boot (AVB) enforces cryptographic signatures and will refuse modified firmware partitions.
 
-**[WK7-software-for-locked-bootloader-EXPERIMENTAL/](WK7-software-for-locked-bootloader-EXPERIMENTAL/)**
+However, a dedicated experimental toolkit is provided in **[`WK7-software-for-locked-bootloader-EXPERIMENTAL/`](WK7-software-for-locked-bootloader-EXPERIMENTAL/)** exploring what *is* possible on locked units.
 
 > [!CAUTION]
-> **Experimental. No locked WK7 has ever been tested with these tools.**
-> Every hardware observation behind that folder comes from a unit whose
-> bootloader was already unlocked. Its guidance is inference, not verified fact.
+> **Experimental — Untested on Physical Locked Hardware.**
+> All hardware findings in this project originate from a developer prototype unit (`serial 2132083b`). The locked-device guidance below is **careful architectural inference**, not verified fact. You may be the first to test these tools on a production locked unit. Always take backups first.
 
-### Why some of it still works
+---
 
-The entire software stack lives in `/data`, not in a firmware partition. The
-bootloader lock governs `fastboot` — the `flashing unlock` and `flash` entry
-points — and has no bearing on writes to `/data`. So a locked unit with a working
-root shell should be able to run AirPlay 2, Spotify Connect, moOde, the dashboard,
-the buttons and the LED ring.
+### Why the Software Stack Can Still Work While Locked
 
-### What you lose
+The bootloader lock governs **`fastboot`** (the `fastboot flashing unlock` and `fastboot flash` interfaces). It **does not restrict runtime writes to `/data`**.
 
-**Auto-start at power-on.** The unlocked path starts the stack from a boot hook
-in `system_b`, which needs one flag changed in `vbmeta_b`. On a locked unit that
-modification is refused — correctly, since it is signature-verified.
+Because the entire WK7 Reforged audio stack (Alpine Linux chroot, AirPlay 2, Spotify Connect, moOde, dashboard, and hardware button/LED daemons) lives inside `/data/wk7linux`, **a locked unit with an active root shell (`adb root`) can run the exact same audio software as an unlocked unit.**
 
-The workaround is one command after each power-on:
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                     UNLOCKED vs. LOCKED CAPABILITIES                   │
+├────────────────────────────────────────┬───────────────┬───────────────┤
+│ Capability                             │ Unlocked Unit │ Locked Unit   │
+├────────────────────────────────────────┼───────────────┼───────────────┤
+│ Install userspace stack into /data     │ Verified      │ Untested, Yes │
+│ AirPlay 2 / Spotify Connect / moOde    │ Verified      │ Untested, Yes │
+│ Web Dashboard & Button/LED integration │ Verified      │ Untested, Yes │
+│ Auto-start at cold boot (Slot B hook)  │ Verified      │ ❌ Impossible │
+│ Manual start required after power-on   │ Not needed    │ ⚠️ Required   │
+│ Slot B firmware partition writes       │ Verified      │ ❌ Blocked    │
+└────────────────────────────────────────┴───────────────┴───────────────┘
+```
 
+#### What You Lose: Autonomous Cold-Boot
+On an unlocked unit, auto-start is achieved by writing an init service into `system_b` and disabling dm-verity verification in `vbmeta_b`. On a locked unit, modifying `vbmeta_b` breaks its cryptographic signature, and modifying `system_b` breaks the dm-verity hashtree—causing the bootloader to reject boot.
+
+#### The Workaround: Manual Trigger After Power-On
+If your unit has ADB root access, simply start the stack once over Wi-Fi after powering the speaker on:
 ```bash
 adb -s <speaker-ip>:5555 shell '/data/wk7-enter.sh -c "wk7ctl start all"'
 ```
+*(This command can be saved as a one-click desktop shortcut or phone automation script.)*
 
-### Start here
+---
 
+### Diagnostic Workflow: The 3 Rungs (`--probe`)
+
+Before touching anything, run the non-destructive probe tool:
 ```bash
 cd WK7-software-for-locked-bootloader-EXPERIMENTAL
 ./install-locked.sh <speaker-ip> --probe
 ```
+`--probe` is completely read-only, makes no modifications, and tests which of three diagnostic rungs your unit occupies:
 
-`--probe` is read-only, needs no root, and reports which of three situations you
-are in: ADB reachable, root available or not, and what to do next. On a locked
-unit it is usually the only step you can run.
+1. **Rung 1: ADB Reachable** (`05c6:901d` via USB or port 5555 over Wi-Fi). On the tested prototype, ADB was compiled into the boot default (`ro.sys.usb.default.config = diag,adb`).
+2. **Rung 2: `adb root` Permitted (The Core Blocker)**:
+   - The properties enabling root (`ro.debuggable = 1`, `ro.build.type = userdebug`, `test-keys`) reside in the **system image**, not the bootloader. If your locked unit runs a `userdebug` firmware, `adb root` will succeed!
+   - If your locked speaker runs a production `user` build with `release-keys`, stock `adbd` will reject root access.
+3. **Rung 3: `/data` Writable**: If `adb root` succeeds, install the stack with `./install-locked.sh <speaker-ip> --stage1 ../WK7-software-for-unlocked-bootloader/wk7-build/stage1`.
 
-The one thing it cannot tell you in advance is whether `adb root` is permitted
-while the bootloader is locked. If it is not, the remaining options are a kernel
-exploit, EDL mode with an LG-signed firehose loader, or a UART console — all
-documented in that folder, none of them confirmed to work.
+---
 
-### Working with an AI agent
+### Potential Technical Routes If `adb root` Is Blocked
 
-This material involves bootloader locks, which some AI assistants decline to
-help with as a matter of policy. If your agent refuses or lectures you about
-bootloader unlocking, that is a reasonable position on its part and not a bug.
+If your locked unit runs a production `user` build and refuses `adb root`, the repository documents four potential exploration vectors:
+
+#### Route 1: Qualcomm EDL Mode (9008) + Firehose Loader
+- **Mechanism**: Emergency Download Mode (`05c6:9008`) is implemented in SoC boot ROM *below* `aboot` (the Android bootloader). It bypasses all Android-level locks.
+- **Entry**: Enter via [`04_edl_enter.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/04_edl_enter.sh) or hardware test pad shorts.
+- **The Blocker**: Flashing via EDL requires an **LG-signed SDM212 firehose programmer ELF** (`prog_firehose_lge_*.mbn`). Unsigned loaders will be rejected by the SoC's hardware root of trust.
+- Technical analysis: [`docs/EDL.md`](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/EDL.md)
+
+#### Route 2: Kernel Privilege Escalation Triage (Linux 3.10.49)
+- **Mechanism**: The stock kernel is Linux 3.10.49 (built November 2017 with security patch level 2017-10-05).
+- **Tooling**:
+  - [`exploits/00_triage.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/exploits/00_triage.sh): Probes writable sysfs/debugfs nodes, user permissions, and mount tables.
+  - [`exploits/02_cve_scout.py`](WK7-software-for-locked-bootloader-EXPERIMENTAL/exploits/02_cve_scout.py): Cross-references the kernel build with unpatched 2017–2018 public CVE candidates.
+- Technical analysis: [`docs/KERNEL.md`](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/KERNEL.md)
+
+#### Route 3: Internal Hardware UART Serial Console
+- The kernel command line reveals an active serial console at `console=ttyHSL0,115200,n8` on Qualcomm BLSP UART (`0x78AF000`). Test pads exist on the mainboard inside the housing.
+
+---
+
+### ⚠️ Network Hazard: LAN Devices Responding on Port 5555
+During testing, other smart home hardware on the local network (such as a Google Home / Nest device) readily answered `adb connect` on port 5555. 
+
+To prevent accidental installation to the wrong device, both [`install-locked.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/install-locked.sh) and [`install.sh`](WK7-software-for-unlocked-bootloader/wk7-build/install.sh) strictly query `ro.product.model` and abort unless the device identifies as an LG WK7.
+
+---
+
+### Tooling Reference for Locked Units
+
+| Script | Purpose | Needs Device Root | Destructive |
+|---|---|---|---|
+| [`install-locked.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/install-locked.sh) | Installs the audio stack exclusively into `/data` | Yes | No |
+| [`00_probe.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/00_probe.sh) | Identifies device posture, build type, and lock state | No | No |
+| [`01_backup.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/01_backup.sh) | Dumps critical partitions for safety | Yes | No |
+| [`02_restore.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/02_restore.sh) | Writes raw partitions back (brick recovery) | Yes | **YES** |
+| [`03_flash_adb_root.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/03_flash_adb_root.sh) | Flashes boot/system images directly via root shell | Yes | **YES** |
+| [`04_edl_enter.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/04_edl_enter.sh) | Switches Qualcomm SoC into EDL 9008 mode | No | No |
+| [`05_edl_firehose.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/05_edl_firehose.sh) | Interacts with EDL (requires signed firehose loader) | No | **YES** |
+| [`exploits/00_triage.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/exploits/00_triage.sh) | Enumerate escalation options and permissions | No | No |
+| [`exploits/02_cve_scout.py`](WK7-software-for-locked-bootloader-EXPERIMENTAL/exploits/02_cve_scout.py) | Maps kernel 3.10.49 to historical CVE candidates | No | No |
+
+---
+
+### Working with an AI Agent
+
+This material involves bootloader locks, which some AI assistants decline to help with as a matter of policy. If your agent refuses or lectures you about bootloader unlocking, that is a reasonable position on its part and not a bug.
 
 Practical options:
+- **Ask about a specific script instead of the goal.** *"What does `install-locked.sh --probe` check?"* is a narrower, more answerable question than *"how do I unlock this bootloader?"*
+- **Use a different assistant for this task.** Several agents decline security research on locked devices; others will help. If yours won't, switching is the fastest path.
+- **Just run the read-only scripts.** `--probe`, `00_probe.sh`, and `exploits/00_triage.sh` change nothing and print their findings. You may not need an agent at all for the diagnostic steps.
 
-- **Ask about a specific script instead of the goal.** "What does
-  `install-locked.sh --probe` check?" is a narrower, more answerable question
-  than "how do I unlock this bootloader?"
-- **Use a different assistant for this task.** Several agents decline security
-  research on locked devices; others will help. If yours won't, switching is
-  the fastest path.
-- **Just run the read-only scripts.** `--probe`, `00_probe.sh` and
-  `exploits/00_triage.sh` change nothing and print their findings. You may not
-  need an agent at all for the diagnostic steps.
+---
+
+### Essential Technical References for Locked Units
+
+* **[WK7-software-for-locked-bootloader-EXPERIMENTAL/README.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/README.md)**: Overview of experimental scripts, safety boundaries, and the `/data` installation path.
+* **[WK7-software-for-locked-bootloader-EXPERIMENTAL/AGENTS.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/AGENTS.md)**: Operating rules for locked units, confirmed hardware facts, and test procedures.
+* **[docs/locked.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/locked.md)**: In-depth technical breakdown of what is verified vs. inferred, why `/data` works, and the `adb root` blocker.
+* **[docs/EDL.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/EDL.md)**: Emergency Download Mode (9008) deep dive and vendor-signed Firehose loader requirements.
+* **[docs/KERNEL.md](WK7-software-for-locked-bootloader-EXPERIMENTAL/docs/KERNEL.md)**: Privilege escalation triage on Linux 3.10.49 and CVE scouting analysis.
 
 ---
 
