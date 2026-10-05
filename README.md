@@ -101,7 +101,7 @@ The installation is **non-destructive**: LG's original stock firmware remains co
 
 #### 1. Back Up Factory Partitions (Safety Net)
 Before modifying anything, take verified raw dumps of your eMMC partitions over Wi-Fi ADB. If anything ever goes wrong, you can restore bit-for-bit back to stock.
-* Backup guide & partition verification: [`wk7-backup/README.md`](WK7-software-for-unlocked-bootloader/wk7-backup/README.md)
+* Backup tool: [`01_backup.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/01_backup.sh) (dumps critical partitions) and [`02_restore.sh`](WK7-software-for-locked-bootloader-EXPERIMENTAL/02_restore.sh) (writes them back).
 
 #### 2. Deploy Userspace Audio Stack to `/data` (Zero Risk)
 The entire application stack (AirPlay 2, Spotify Connect, moOde, dashboard, button daemon) lives in `/data/wk7linux`. Run the automated installer from your computer:
@@ -128,7 +128,7 @@ Stop conflicting LG processes (`stop peripheralman`, `stop mdnsd`), open `http:/
 
 #### 4. Configure Slot B for Autonomous Cold-Boot
 To make the speaker boot automatically into WK7 Reforged without needing a computer attached:
-1. **Disable dm-verity on Slot B**: Flash [`vbmeta_b_hashtree_disabled.img`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/vbmeta_b_hashtree_disabled.img) to `vbmeta_b` (or run [`patch-slotb-images.py`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/patch-slotb-images.py)).
+1. **Disable dm-verity on Slot B**: Run [`patch-slotb-images.py`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/patch-slotb-images.py), which sets the hashtree-disabled flag in `vbmeta_b` in place. (A prebuilt `vbmeta_b_hashtree_disabled.img` is not committed — `*.img` is gitignored — so generate it with the script.)
 2. **Set SELinux Permissive**: Patch the `boot_b` kernel cmdline header to permissive mode.
 3. **Install the Boot Hook**: Mount `system_b` and copy [`wk7.rc`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/wk7.rc) into `/system/etc/init/` and [`wk7-boot.sh`](WK7-software-for-unlocked-bootloader/wk7-build/slotb/wk7-boot.sh) into `/system/bin/`.
 4. **Switch Active Slot to B**: Run `fastboot --set-active=b`.
